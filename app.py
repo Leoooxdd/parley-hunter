@@ -440,7 +440,7 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
     <p><strong>Parley Hunter (Free Edition)</strong> v1.0</p>
-    <p>⚠️ Advertencia: Las apuestas deportivas conllevan riesgos. Juega responsablemente.</p>
+    <p>⚠️ hagan sho y apuesten a lo desgraciado y que todo salga en verde alvvvvvv.</p>
     <p>📊 Datos: NFL Data Py + Web Scraping | 🚀 Powered by Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
