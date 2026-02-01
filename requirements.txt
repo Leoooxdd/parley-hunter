@@ -1,8 +1,8 @@
 streamlit
 pandas
 numpy
-nfl_data_py
 requests
+nba_api
 lxml
 html5lib
 beautifulsoup4
