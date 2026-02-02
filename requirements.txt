@@ -3,8 +3,4 @@ pandas
 numpy
 requests
 nba_api
-nfl_data_py
-lxml
-html5lib
-beautifulsoup4
 pillow
