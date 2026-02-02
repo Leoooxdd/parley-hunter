@@ -1,7 +1,8 @@
 """
-PARLEY HUNTER ELITE - Sistema Premium de Apuestas Deportivas
+PARLEISITOS - Sistema de Apuestas Deportivas con FotMob
+Integración: FotMob (endpoints públicos) + NBA API
 Diseño: Minimalista Black & Neon Green
-Autor: Experto Full-Stack Developer
+Autor: Hacker Ético & Desarrollador Senior
 """
 
 import streamlit as st
@@ -9,18 +10,51 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import random
-from typing import List, Dict, Tuple
+import requests
 import json
+from typing import List, Dict, Optional, Tuple
+import time
 
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(
-    page_title="Parley Hunter Elite",
-    page_icon="💎",
+    page_title="Parleisitos",
+    page_icon="⚽",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ==================== ESTILOS CSS PREMIUM ====================
+# ==================== HEADERS PARA FOTMOB (ANTI-BLOQUEO) ====================
+FOTMOB_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+    'Referer': 'https://www.fotmob.com/',
+    'Origin': 'https://www.fotmob.com',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin'
+}
+
+# ==================== DICCIONARIO DE LIGAS FOTMOB ====================
+LIGAS_FOTMOB = {
+    "⚽ Liga MX": {"id": 87, "emoji": "🇲🇽", "country": "México"},
+    "⚽ Premier League": {"id": 47, "emoji": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "country": "Inglaterra"},
+    "⚽ La Liga": {"id": 87, "emoji": "🇪🇸", "country": "España"},
+    "⚽ Serie A": {"id": 55, "emoji": "🇮🇹", "country": "Italia"},
+    "⚽ Bundesliga": {"id": 54, "emoji": "🇩🇪", "country": "Alemania"},
+    "⚽ Ligue 1": {"id": 53, "emoji": "🇫🇷", "country": "Francia"},
+    "⚽ Champions League": {"id": 42, "emoji": "🏆", "country": "UEFA"},
+    "⚽ Europa League": {"id": 73, "emoji": "🏆", "country": "UEFA"},
+    "⚽ MLS": {"id": 130, "emoji": "🇺🇸", "country": "USA"},
+    "⚽ Liga Argentina": {"id": 68, "emoji": "🇦🇷", "country": "Argentina"},
+    "⚽ Liga Brasileña": {"id": 71, "emoji": "🇧🇷", "country": "Brasil"},
+    "⚽ Copa Libertadores": {"id": 299, "emoji": "🏆", "country": "CONMEBOL"},
+    "⚽ Eredivisie": {"id": 57, "emoji": "🇳🇱", "country": "Países Bajos"},
+    "⚽ Liga Portuguesa": {"id": 63, "emoji": "🇵🇹", "country": "Portugal"},
+}
+
+# ==================== ESTILOS CSS ====================
 def inject_custom_css():
     st.markdown("""
     <style>
@@ -31,13 +65,11 @@ def inject_custom_css():
         box-sizing: border-box;
     }
     
-    /* FONDO NEGRO PURO */
     .stApp {
         background-color: #000000;
         color: #ffffff;
     }
     
-    /* ELIMINAR PADDING DE STREAMLIT */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0rem !important;
@@ -46,12 +78,11 @@ def inject_custom_css():
         max-width: 100% !important;
     }
     
-    /* OCULTAR HEADER Y FOOTER */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* TABS PERSONALIZADOS */
+    /* TABS */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         background-color: #121212;
@@ -74,8 +105,8 @@ def inject_custom_css():
         box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
     }
     
-    /* TARJETAS DE PARLEY */
-    .parley-card {
+    /* TARJETAS DE PARTIDO */
+    .match-card {
         background: linear-gradient(145deg, #1a1a1a 0%, #0d0d0d 100%);
         border: 2px solid #00ff00;
         border-radius: 16px;
@@ -85,13 +116,160 @@ def inject_custom_css():
         transition: all 0.3s ease;
     }
     
-    .parley-card:hover {
+    .match-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 12px 40px rgba(0, 255, 0, 0.4);
-        border-color: #00ff00;
     }
     
-    /* HEADER DE PARLEY */
+    .match-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #00ff00;
+    }
+    
+    .match-time {
+        font-size: 14px;
+        color: #00ff00;
+        font-weight: 600;
+    }
+    
+    .match-league {
+        font-size: 12px;
+        color: #888888;
+        text-transform: uppercase;
+    }
+    
+    .match-teams {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 15px 0;
+    }
+    
+    .team-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+    }
+    
+    .match-vs {
+        font-size: 16px;
+        color: #00ff00;
+        font-weight: 700;
+    }
+    
+    .match-info {
+        background: #0d0d0d;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: #888888;
+    }
+    
+    /* TABLA DE POSICIONES */
+    .table-container {
+        background: #1a1a1a;
+        border: 2px solid #00ff00;
+        border-radius: 12px;
+        padding: 15px;
+        margin: 15px 0;
+    }
+    
+    .table-row {
+        display: grid;
+        grid-template-columns: 50px 1fr 60px 60px 60px 60px;
+        padding: 12px 10px;
+        border-bottom: 1px solid #333333;
+        align-items: center;
+    }
+    
+    .table-row:hover {
+        background: #0d0d0d;
+    }
+    
+    .table-header {
+        font-weight: 700;
+        color: #00ff00;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+    
+    .pos-number {
+        font-weight: 700;
+        color: #00ff00;
+        font-size: 16px;
+    }
+    
+    .team-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .team-logo {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+    }
+    
+    /* STATS DE JUGADORES */
+    .player-card {
+        background: #1a1a1a;
+        border-left: 4px solid #00ff00;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .player-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .player-photo {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        border: 3px solid #00ff00;
+        object-fit: cover;
+    }
+    
+    .player-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+    }
+    
+    .player-team {
+        font-size: 12px;
+        color: #888888;
+    }
+    
+    .player-stat {
+        font-size: 24px;
+        font-weight: 900;
+        color: #00ff00;
+        text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+    }
+    
+    /* PARLEY CARD */
+    .parley-card {
+        background: linear-gradient(145deg, #1a1a1a 0%, #0d0d0d 100%);
+        border: 2px solid #00ff00;
+        border-radius: 16px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 8px 32px rgba(0, 255, 0, 0.2);
+    }
+    
     .parley-header {
         display: flex;
         justify-content: space-between;
@@ -107,60 +285,20 @@ def inject_custom_css():
         background: linear-gradient(90deg, #00ff00, #00cc00);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        text-transform: uppercase;
-        letter-spacing: 2px;
     }
     
     .parley-odds {
         font-size: 32px;
         font-weight: 900;
         color: #00ff00;
-        text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
     }
     
-    /* PICKS CON AVATAR */
     .pick-item {
-        display: flex;
-        align-items: center;
         background: #0d0d0d;
         padding: 15px;
         margin: 10px 0;
         border-radius: 12px;
         border-left: 4px solid #00ff00;
-    }
-    
-    .player-avatar {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        margin-right: 15px;
-        border: 3px solid #00ff00;
-        object-fit: cover;
-        box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
-    }
-    
-    .pick-info {
-        flex: 1;
-    }
-    
-    .pick-player {
-        font-size: 18px;
-        font-weight: 700;
-        color: #ffffff;
-        margin-bottom: 5px;
-    }
-    
-    .pick-prediction {
-        font-size: 14px;
-        color: #00ff00;
-        font-weight: 600;
-    }
-    
-    .pick-odds {
-        font-size: 16px;
-        font-weight: 700;
-        color: #00ff00;
-        margin-left: 20px;
     }
     
     /* BOTONES */
@@ -172,9 +310,7 @@ def inject_custom_css():
         border-radius: 8px;
         padding: 12px 30px;
         font-size: 16px;
-        cursor: pointer;
         transition: all 0.3s;
-        box-shadow: 0 4px 15px rgba(0, 255, 0, 0.3);
     }
     
     .stButton > button:hover {
@@ -182,132 +318,174 @@ def inject_custom_css():
         box-shadow: 0 8px 25px rgba(0, 255, 0, 0.5);
     }
     
-    /* EXPANDERS */
-    .streamlit-expanderHeader {
-        background-color: #1a1a1a;
-        border: 1px solid #00ff00;
-        border-radius: 8px;
-        color: #ffffff;
-        font-weight: 700;
+    /* ALERT BOX */
+    .alert-box {
+        background: #1a1a1a;
+        border: 2px solid #ff9900;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 15px 0;
+        color: #ff9900;
     }
     
     /* DATAFRAME */
     .dataframe {
         background-color: #0d0d0d !important;
         color: #ffffff !important;
-        border: 1px solid #00ff00 !important;
     }
     
-    /* MÉTRICAS */
-    .metric-container {
-        background: #1a1a1a;
-        border: 2px solid #00ff00;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-    }
-    
-    .metric-value {
-        font-size: 36px;
-        font-weight: 900;
-        color: #00ff00;
-        text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
-    }
-    
-    .metric-label {
-        font-size: 14px;
-        color: #888888;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    /* COMUNIDAD */
-    .post-card {
-        background: #1a1a1a;
-        border: 1px solid #333333;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 15px 0;
-    }
-    
-    .vote-button {
-        display: inline-block;
-        padding: 8px 20px;
-        margin: 5px;
-        border-radius: 20px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-    
-    .vote-win {
-        background: #00ff00;
-        color: #000000;
-    }
-    
-    .vote-lose {
-        background: #ff0000;
-        color: #ffffff;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# ==================== BASE DE DATOS DE JUGADORES ====================
-PLAYER_IMGS = {
-    # NBA
-    "LeBron James": "https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png",
-    "Stephen Curry": "https://cdn.nba.com/headshots/nba/latest/1040x760/201939.png",
-    "Giannis Antetokounmpo": "https://cdn.nba.com/headshots/nba/latest/1040x760/203507.png",
-    "Luka Dončić": "https://cdn.nba.com/headshots/nba/latest/1040x760/1629029.png",
-    "Kevin Durant": "https://cdn.nba.com/headshots/nba/latest/1040x760/201142.png",
-    "Nikola Jokić": "https://cdn.nba.com/headshots/nba/latest/1040x760/203999.png",
-    "Joel Embiid": "https://cdn.nba.com/headshots/nba/latest/1040x760/203954.png",
-    "Jayson Tatum": "https://cdn.nba.com/headshots/nba/latest/1040x760/1628369.png",
-    "Anthony Davis": "https://cdn.nba.com/headshots/nba/latest/1040x760/203076.png",
-    "Damian Lillard": "https://cdn.nba.com/headshots/nba/latest/1040x760/203081.png",
-    
-    # FÚTBOL
-    "Lionel Messi": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/45843.png",
-    "Cristiano Ronaldo": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/45686.png",
-    "Kylian Mbappé": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/231447.png",
-    "Erling Haaland": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/4328422.png",
-    "Vinicius Jr": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/4352055.png",
-    "Mohamed Salah": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/149350.png",
-    "Jude Bellingham": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/4629889.png",
-    "Harry Kane": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/144098.png",
-    "Robert Lewandowski": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/103955.png",
-    "Neymar Jr": "https://a.espncdn.com/combiner/i?img=/i/headshots/soccer/players/full/110117.png",
-    
-    # NFL
-    "Patrick Mahomes": "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/3139477.png",
-    "Josh Allen": "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/3918298.png",
-    "Lamar Jackson": "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/3916387.png",
-    "Travis Kelce": "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/15847.png",
-    "Tyreek Hill": "https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/3116406.png",
-}
+# ==================== FUNCIONES DE FOTMOB ====================
 
-# ==================== DATOS SIMULADOS DE EQUIPOS ====================
-TEAM_POWER = {
-    # Premier League
-    "Manchester City": 95, "Liverpool": 92, "Arsenal": 90, "Chelsea": 85,
-    "Manchester United": 83, "Tottenham": 82, "Newcastle": 80, "Brighton": 78,
-    "Aston Villa": 77, "West Ham": 75, "Crystal Palace": 72, "Wolves": 70,
-    
-    # La Liga
-    "Real Madrid": 94, "Barcelona": 91, "Atlético Madrid": 88, "Sevilla": 82,
-    "Real Sociedad": 80, "Villarreal": 79, "Athletic Bilbao": 77, "Valencia": 75,
-    
-    # NBA
-    "Boston Celtics": 93, "Denver Nuggets": 91, "Milwaukee Bucks": 90,
-    "Phoenix Suns": 88, "LA Lakers": 87, "Golden State Warriors": 86,
-    "Dallas Mavericks": 85, "Philadelphia 76ers": 84, "Miami Heat": 82,
-    "LA Clippers": 81, "Memphis Grizzlies": 79, "Sacramento Kings": 78,
-}
+def fetch_fotmob_data(url: str, timeout: int = 10) -> Optional[Dict]:
+    """
+    Función genérica para hacer requests a FotMob con manejo de errores
+    """
+    try:
+        response = requests.get(url, headers=FOTMOB_HEADERS, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"⚠️ Error al conectar con FotMob: {str(e)}")
+        return None
+    except json.JSONDecodeError:
+        st.error("⚠️ Error al decodificar respuesta de FotMob")
+        return None
 
-# ==================== FUNCIONES DE GENERACIÓN DE DATOS ====================
+def get_matches_today(league_id: Optional[int] = None) -> List[Dict]:
+    """
+    Obtiene partidos de hoy desde FotMob
+    """
+    today = datetime.now().strftime("%Y%m%d")
+    url = f"https://www.fotmob.com/api/matches?date={today}"
+    
+    data = fetch_fotmob_data(url)
+    
+    if not data or 'leagues' not in data:
+        return []
+    
+    matches = []
+    
+    for league in data.get('leagues', []):
+        # Si se especifica una liga, filtrar solo esa
+        if league_id and league.get('id') != league_id:
+            continue
+        
+        league_name = league.get('name', 'Unknown')
+        
+        for match in league.get('matches', []):
+            try:
+                matches.append({
+                    'league': league_name,
+                    'league_id': league.get('id'),
+                    'home': match.get('home', {}).get('name', 'TBD'),
+                    'away': match.get('away', {}).get('name', 'TBD'),
+                    'time': match.get('status', {}).get('utcTime', 'TBD'),
+                    'status': match.get('status', {}).get('started', False),
+                    'stadium': match.get('status', {}).get('reason', {}).get('long', 'N/A'),
+                    'match_id': match.get('id'),
+                    'home_score': match.get('home', {}).get('score', '-'),
+                    'away_score': match.get('away', {}).get('score', '-')
+                })
+            except Exception as e:
+                continue
+    
+    return matches
 
-def get_nba_games_today():
-    """Obtiene partidos de NBA de hoy (con datos reales o simulados)"""
+def get_league_table(league_id: int) -> Optional[pd.DataFrame]:
+    """
+    Obtiene la tabla de posiciones de una liga desde FotMob
+    """
+    url = f"https://www.fotmob.com/api/leagues?id={league_id}&tab=table&type=league&timeZone=America/Mexico_City"
+    
+    data = fetch_fotmob_data(url)
+    
+    if not data or 'table' not in data:
+        return None
+    
+    try:
+        # FotMob puede tener diferentes estructuras
+        tables = data['table']
+        
+        if isinstance(tables, list) and len(tables) > 0:
+            table_data = tables[0].get('data', {}).get('table', {}).get('all', [])
+        else:
+            table_data = []
+        
+        if not table_data:
+            return None
+        
+        rows = []
+        for team in table_data:
+            rows.append({
+                'Pos': team.get('idx', '-'),
+                'Equipo': team.get('name', 'Unknown'),
+                'PJ': team.get('played', 0),
+                'PG': team.get('wins', 0),
+                'PE': team.get('draws', 0),
+                'PP': team.get('losses', 0),
+                'GF': team.get('scoresFor', 0),
+                'GC': team.get('scoresAgainst', 0),
+                'DG': team.get('goalConDiff', 0),
+                'Pts': team.get('pts', 0)
+            })
+        
+        return pd.DataFrame(rows)
+    
+    except Exception as e:
+        st.error(f"⚠️ Error procesando tabla: {str(e)}")
+        return None
+
+def get_league_stats(league_id: int, stat_type: str = 'scorers') -> List[Dict]:
+    """
+    Obtiene estadísticas de jugadores de una liga
+    stat_type: 'scorers', 'assists', 'rating', etc.
+    """
+    url = f"https://www.fotmob.com/api/leagues?id={league_id}&tab=stats&type=league&timeZone=America/Mexico_City"
+    
+    data = fetch_fotmob_data(url)
+    
+    if not data or 'stats' not in data:
+        return []
+    
+    try:
+        stats_list = data.get('stats', [])
+        
+        players = []
+        
+        # Buscar la sección de goleadores/asistencias
+        for stat_section in stats_list:
+            if stat_type == 'scorers' and 'TopScorers' in stat_section.get('title', ''):
+                players_data = stat_section.get('players', [])
+            elif stat_type == 'assists' and 'Assists' in stat_section.get('title', ''):
+                players_data = stat_section.get('players', [])
+            elif stat_type == 'shots' and 'Shots' in stat_section.get('title', ''):
+                players_data = stat_section.get('players', [])
+            else:
+                continue
+            
+            for player in players_data[:10]:  # Top 10
+                players.append({
+                    'name': player.get('name', 'Unknown'),
+                    'team': player.get('teamName', 'Unknown'),
+                    'stat_value': player.get('statValue', 0),
+                    'photo': player.get('imageUrl', '')
+                })
+            
+            break
+        
+        return players
+    
+    except Exception as e:
+        st.error(f"⚠️ Error obteniendo stats: {str(e)}")
+        return []
+
+# ==================== FUNCIONES NBA ====================
+
+def get_nba_games_today() -> List[Dict]:
+    """Obtiene partidos de NBA de hoy"""
     try:
         from nba_api.live.nba.endpoints import scoreboard
         games = scoreboard.ScoreBoard()
@@ -315,191 +493,145 @@ def get_nba_games_today():
         
         if games_data and 'scoreboard' in games_data and 'games' in games_data['scoreboard']:
             real_games = []
-            for game in games_data['scoreboard']['games'][:5]:
+            for game in games_data['scoreboard']['games'][:8]:
                 real_games.append({
                     'home': game['homeTeam']['teamName'],
                     'away': game['awayTeam']['teamName'],
-                    'time': game.get('gameStatusText', 'TBD')
+                    'time': game.get('gameStatusText', 'TBD'),
+                    'home_score': game['homeTeam'].get('score', '-'),
+                    'away_score': game['awayTeam'].get('score', '-')
                 })
-            if real_games:
-                return real_games
-    except:
+            return real_games
+    except Exception as e:
         pass
     
-    # FALLBACK: Partidos simulados
-    teams = ["Lakers", "Celtics", "Warriors", "Bucks", "Nets", "Heat", "Suns", "Mavericks"]
+    # FALLBACK
+    teams = ["Lakers", "Celtics", "Warriors", "Bucks", "Nets", "Heat", "Suns", "Mavs"]
     games = []
     random.shuffle(teams)
     for i in range(0, len(teams)-1, 2):
         games.append({
             'home': teams[i],
             'away': teams[i+1],
-            'time': f"{random.randint(18, 22)}:{random.choice(['00', '30'])} ET"
+            'time': f"{random.randint(18, 22)}:00 ET",
+            'home_score': '-',
+            'away_score': '-'
         })
     return games
 
-def get_soccer_matches():
-    """Genera partidos de fútbol basados en poder de equipos"""
-    leagues = {
-        "Premier League": ["Manchester City", "Liverpool", "Arsenal", "Chelsea", "Tottenham", "Manchester United"],
-        "La Liga": ["Real Madrid", "Barcelona", "Atlético Madrid", "Sevilla", "Real Sociedad", "Villarreal"]
-    }
-    
-    matches = []
-    for league, teams in leagues.items():
-        random.shuffle(teams)
-        for i in range(0, min(4, len(teams)-1), 2):
-            home = teams[i]
-            away = teams[i+1]
-            
-            # Calcular cuotas basadas en poder
-            power_diff = TEAM_POWER.get(home, 75) - TEAM_POWER.get(away, 75)
-            base_odds_home = max(1.3, 2.5 - (power_diff / 30))
-            base_odds_away = max(1.3, 2.5 + (power_diff / 30))
-            
-            matches.append({
-                'league': league,
-                'home': home,
-                'away': away,
-                'time': f"{random.randint(12, 20)}:{random.choice(['00', '15', '30', '45'])}",
-                'odds_home': round(base_odds_home, 2),
-                'odds_draw': round(random.uniform(3.0, 3.8), 2),
-                'odds_away': round(base_odds_away, 2),
-                'over_2_5': round(random.uniform(1.6, 2.1), 2),
-                'under_2_5': round(random.uniform(1.7, 2.2), 2),
-                'btts_yes': round(random.uniform(1.7, 2.3), 2),
-                'btts_no': round(random.uniform(1.5, 2.0), 2)
-            })
-    
-    return matches
+# ==================== GENERADOR DE PARLEYS INTELIGENTE ====================
 
-def generate_player_props(sport: str, num_picks: int = 5):
-    """Genera props de jugadores con imágenes"""
-    props = []
+def generate_smart_parlay(league_id: int, league_name: str) -> Dict:
+    """
+    Genera un parlay inteligente basado en datos reales de FotMob
+    """
+    matches = get_matches_today(league_id)
+    table = get_league_table(league_id)
     
-    if sport == "NBA":
-        stats = ["Puntos", "Rebotes", "Asistencias", "Robos", "Rebotes+Asistencias"]
-        nba_players = [p for p in PLAYER_IMGS.keys() if p in [
-            "LeBron James", "Stephen Curry", "Giannis Antetokounmpo", "Luka Dončić",
-            "Kevin Durant", "Nikola Jokić", "Joel Embiid", "Jayson Tatum"
-        ]]
+    if not matches:
+        return {
+            'name': f'🎲 Parley {league_name}',
+            'picks': [],
+            'odds': 1.0,
+            'confidence': 'N/A'
+        }
+    
+    picks = []
+    
+    # Seleccionar hasta 5 partidos
+    selected_matches = random.sample(matches, min(5, len(matches)))
+    
+    for match in selected_matches:
+        # Determinar favorito basado en tabla (si existe)
+        home_pos = away_pos = 10  # Default medio
         
-        for _ in range(num_picks):
-            player = random.choice(nba_players)
-            stat = random.choice(stats)
+        if table is not None:
+            home_data = table[table['Equipo'] == match['home']]
+            away_data = table[table['Equipo'] == match['away']]
             
-            # Valores realistas
-            if stat == "Puntos":
-                line = round(random.uniform(22.5, 32.5), 1)
-            elif stat == "Rebotes":
-                line = round(random.uniform(8.5, 12.5), 1)
-            elif stat == "Asistencias":
-                line = round(random.uniform(6.5, 10.5), 1)
-            elif stat == "Robos":
-                line = round(random.uniform(1.5, 2.5), 1)
-            else:
-                line = round(random.uniform(14.5, 20.5), 1)
-            
-            props.append({
-                'player': player,
-                'image': PLAYER_IMGS.get(player, ""),
-                'stat': stat,
-                'line': line,
-                'pick': random.choice(["Over", "Under"]),
-                'odds': round(random.uniform(1.75, 2.1), 2)
-            })
-    
-    elif sport == "Soccer":
-        stats = ["Tiros al Arco", "Goles", "Asistencias", "Tarjetas"]
-        soccer_players = [p for p in PLAYER_IMGS.keys() if p in [
-            "Kylian Mbappé", "Erling Haaland", "Vinicius Jr", "Mohamed Salah",
-            "Jude Bellingham", "Harry Kane", "Robert Lewandowski"
-        ]]
+            if not home_data.empty:
+                home_pos = int(home_data.iloc[0]['Pos'])
+            if not away_data.empty:
+                away_pos = int(away_data.iloc[0]['Pos'])
         
-        for _ in range(num_picks):
-            player = random.choice(soccer_players)
-            stat = random.choice(stats)
-            
-            if stat == "Tiros al Arco":
-                line = round(random.uniform(2.5, 4.5), 1)
-            elif stat == "Goles":
-                line = round(random.uniform(0.5, 1.5), 1)
+        # Lógica de predicción
+        pos_diff = abs(home_pos - away_pos)
+        
+        if pos_diff >= 5:
+            # Gran diferencia -> Pick al favorito
+            if home_pos < away_pos:
+                prediction = f"{match['home']} Gana"
+                odds = round(random.uniform(1.5, 1.8), 2)
             else:
-                line = round(random.uniform(0.5, 2.5), 1)
-            
-            props.append({
-                'player': player,
-                'image': PLAYER_IMGS.get(player, ""),
-                'stat': stat,
-                'line': line,
-                'pick': random.choice(["Over", "Under"]),
-                'odds': round(random.uniform(1.7, 2.2), 2)
-            })
+                prediction = f"{match['away']} Gana"
+                odds = round(random.uniform(1.6, 1.9), 2)
+        else:
+            # Partido parejo -> Over/Under o BTTS
+            prediction = random.choice([
+                f"Over 2.5 Goles",
+                f"Ambos Anotan (BTTS)",
+                f"Under 3.5 Goles"
+            ])
+            odds = round(random.uniform(1.7, 2.1), 2)
+        
+        picks.append({
+            'match': f"{match['home']} vs {match['away']}",
+            'prediction': prediction,
+            'odds': odds,
+            'league': league_name
+        })
     
-    return props
-
-def calculate_parlay_odds(picks: List[Dict]) -> float:
-    """Calcula cuota total del parley"""
+    # Calcular cuota total
     total_odds = 1.0
     for pick in picks:
         total_odds *= pick['odds']
-    return round(total_odds, 2)
-
-def generate_daily_parlays():
-    """Genera los 3 parleys del día"""
-    parlays = {
-        'safe': {'name': '🛡️ PARLEY ASEGURADO', 'picks': [], 'type': 'safe'},
-        'medium': {'name': '⚖️ PARLEY MEDIO', 'picks': [], 'type': 'medium'},
-        'dream': {'name': '🦄 PARLEY SOÑADOR', 'picks': [], 'type': 'dream'}
+    
+    # Determinar confianza
+    if total_odds < 10:
+        confidence = "🛡️ ALTA"
+    elif total_odds < 30:
+        confidence = "⚖️ MEDIA"
+    else:
+        confidence = "🦄 BAJA"
+    
+    return {
+        'name': f'Parley {league_name}',
+        'picks': picks,
+        'odds': round(total_odds, 2),
+        'confidence': confidence
     }
-    
-    # ASEGURADO (3-4 picks, cuotas bajas)
-    safe_picks = generate_player_props("NBA", 2) + generate_player_props("Soccer", 2)
-    for pick in safe_picks[:4]:
-        pick['odds'] = round(random.uniform(1.4, 1.7), 2)
-    parlays['safe']['picks'] = safe_picks[:4]
-    
-    # MEDIO (5-6 picks, cuotas medias)
-    medium_picks = generate_player_props("NBA", 3) + generate_player_props("Soccer", 3)
-    for pick in medium_picks[:6]:
-        pick['odds'] = round(random.uniform(1.7, 2.0), 2)
-    parlays['medium']['picks'] = medium_picks[:6]
-    
-    # SOÑADOR (8-10 picks, cuotas altas)
-    dream_picks = generate_player_props("NBA", 5) + generate_player_props("Soccer", 5)
-    for pick in dream_picks[:10]:
-        pick['odds'] = round(random.uniform(1.9, 2.4), 2)
-    parlays['dream']['picks'] = dream_picks[:10]
-    
-    return parlays
 
 # ==================== COMPONENTES UI ====================
 
-def render_parlay_card(parlay_data: Dict):
-    """Renderiza una tarjeta de parley premium"""
-    total_odds = calculate_parlay_odds(parlay_data['picks'])
-    potential_win = round(100 * total_odds, 2)
+def render_match_card(match: Dict):
+    """Renderiza una tarjeta de partido"""
+    
+    # Convertir tiempo UTC a formato legible
+    try:
+        if match['time'] != 'TBD':
+            time_str = datetime.fromisoformat(match['time'].replace('Z', '+00:00')).strftime('%H:%M')
+        else:
+            time_str = 'Por definir'
+    except:
+        time_str = match['time']
     
     html = f"""
-    <div class="parley-card">
-        <div class="parley-header">
-            <div class="parley-title">{parlay_data['name']}</div>
-            <div class="parley-odds">@{total_odds}</div>
+    <div class="match-card">
+        <div class="match-header">
+            <div class="match-time">🕐 {time_str}</div>
+            <div class="match-league">{match['league']}</div>
         </div>
-        <div style="margin-bottom: 15px; color: #00ff00; font-size: 16px; font-weight: 600;">
-            💰 Apuesta $100 → Ganas ${potential_win}
+        <div class="match-teams">
+            <div class="team-name">{match['home']}</div>
+            <div class="match-vs">{match['home_score']} - {match['away_score']}</div>
+            <div class="team-name">{match['away']}</div>
         </div>
     """
     
-    for pick in parlay_data['picks']:
+    if match.get('stadium') and match['stadium'] != 'N/A':
         html += f"""
-        <div class="pick-item">
-            <img src="{pick['image']}" class="player-avatar" onerror="this.src='https://via.placeholder.com/50/00ff00/000000?text={pick['player'][0]}'">
-            <div class="pick-info">
-                <div class="pick-player">{pick['player']}</div>
-                <div class="pick-prediction">{pick['pick']} {pick['line']} {pick['stat']}</div>
-            </div>
-            <div class="pick-odds">@{pick['odds']}</div>
+        <div class="match-info">
+            🏟️ {match['stadium']}
         </div>
         """
     
@@ -509,37 +641,36 @@ def render_parlay_card(parlay_data: Dict):
     
     st.markdown(html, unsafe_allow_html=True)
 
-def render_top_scorers():
-    """Tabla de goleadores con datos de respaldo"""
-    scorers_data = [
-        {"Jugador": "Erling Haaland", "Equipo": "Man City", "Goles": 28, "Asistencias": 5},
-        {"Jugador": "Harry Kane", "Equipo": "Bayern", "Goles": 26, "Asistencias": 8},
-        {"Jugador": "Kylian Mbappé", "Equipo": "Real Madrid", "Goles": 25, "Asistencias": 7},
-        {"Jugador": "Robert Lewandowski", "Equipo": "Barcelona", "Goles": 23, "Asistencias": 4},
-        {"Jugador": "Victor Osimhen", "Equipo": "Napoli", "Goles": 22, "Asistencias": 3},
-        {"Jugador": "Mohamed Salah", "Equipo": "Liverpool", "Goles": 21, "Asistencias": 12},
-        {"Jugador": "Lautaro Martínez", "Equipo": "Inter", "Goles": 20, "Asistencias": 6},
-        {"Jugador": "Vinicius Jr", "Equipo": "Real Madrid", "Goles": 19, "Asistencias": 10},
-        {"Jugador": "Jude Bellingham", "Equipo": "Real Madrid", "Goles": 18, "Asistencias": 9},
-        {"Jugador": "Cole Palmer", "Equipo": "Chelsea", "Goles": 17, "Asistencias": 11},
-    ]
+def render_parley_card(parley: Dict):
+    """Renderiza tarjeta de parley"""
+    potential_win = round(100 * parley['odds'], 2)
     
-    df = pd.DataFrame(scorers_data)
+    html = f"""
+    <div class="parley-card">
+        <div class="parley-header">
+            <div class="parley-title">{parley['name']}</div>
+            <div class="parley-odds">@{parley['odds']}</div>
+        </div>
+        <div style="margin-bottom: 15px; color: #00ff00; font-size: 16px;">
+            💰 Apuesta $100 → Ganas ${potential_win} | Confianza: {parley['confidence']}
+        </div>
+    """
     
-    st.markdown("### ⚽ TOP 10 GOLEADORES - EUROPA 2024/25")
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Jugador": st.column_config.TextColumn("Jugador", width="medium"),
-            "Equipo": st.column_config.TextColumn("Equipo", width="small"),
-            "Goles": st.column_config.NumberColumn("⚽ Goles", width="small"),
-            "Asistencias": st.column_config.NumberColumn("🎯 Asistencias", width="small"),
-        }
-    )
+    for pick in parley['picks']:
+        html += f"""
+        <div class="pick-item">
+            <div style="font-weight: 700; margin-bottom: 5px;">{pick['match']}</div>
+            <div style="color: #00ff00; font-size: 14px;">✅ {pick['prediction']} @{pick['odds']}</div>
+        </div>
+        """
+    
+    html += """
+    </div>
+    """
+    
+    st.markdown(html, unsafe_allow_html=True)
 
-# ==================== APLICACIÓN PRINCIPAL ====================
+# ==================== APP PRINCIPAL ====================
 
 def main():
     inject_custom_css()
@@ -548,209 +679,247 @@ def main():
     st.markdown("""
     <div style='text-align: center; padding: 20px; background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%); border-bottom: 2px solid #00ff00; margin-bottom: 30px;'>
         <h1 style='font-size: 48px; font-weight: 900; background: linear-gradient(90deg, #00ff00, #00cc00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;'>
-            💎 PARLEY HUNTER ELITE
+            ⚽ PARLEISITOS
         </h1>
         <p style='color: #888888; margin-top: 10px; font-size: 16px; letter-spacing: 2px;'>
-            SISTEMA PREMIUM DE APUESTAS DEPORTIVAS
+            SISTEMA CON DATOS REALES DE FOTMOB
         </p>
     </div>
     """, unsafe_allow_html=True)
     
-    # TABS PRINCIPALES
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🏠 INICIO",
-        "⚡ GENERADORES",
-        "⚽ GOLEADORES",
-        "👥 COMUNIDAD"
+    # SELECTOR DE LIGA
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        selected_league = st.selectbox(
+            "Selecciona una Liga:",
+            list(LIGAS_FOTMOB.keys()),
+            key="league_selector"
+        )
+    
+    with col2:
+        st.markdown(f"""
+        <div style='text-align: center; padding: 20px; background: #1a1a1a; border-radius: 10px; margin-top: 22px;'>
+            <div style='font-size: 40px;'>{LIGAS_FOTMOB[selected_league]['emoji']}</div>
+            <div style='color: #888888; font-size: 12px;'>{LIGAS_FOTMOB[selected_league]['country']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    league_id = LIGAS_FOTMOB[selected_league]['id']
+    
+    # TABS
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📅 Partidos",
+        "📊 Tabla",
+        "👟 Jugadores",
+        "🎲 Parley Generator",
+        "🏀 NBA"
     ])
     
-    # ==================== TAB 1: INICIO ====================
+    # ==================== TAB 1: PARTIDOS ====================
     with tab1:
-        st.markdown("### 🎯 LOS 3 PARLEYS DEL DÍA")
-        st.markdown(f"**Fecha:** {datetime.now().strftime('%d/%m/%Y')} | **Actualizados cada 24h**")
+        st.markdown(f"### 📅 PARTIDOS DE HOY - {selected_league}")
         
-        daily_parlays = generate_daily_parlays()
+        with st.spinner("Cargando partidos desde FotMob..."):
+            matches = get_matches_today(league_id)
         
-        cols = st.columns(3)
-        with cols[0]:
-            render_parlay_card(daily_parlays['safe'])
-        with cols[1]:
-            render_parlay_card(daily_parlays['medium'])
-        with cols[2]:
-            render_parlay_card(daily_parlays['dream'])
-        
-        st.markdown("---")
-        st.markdown("### 📊 PARTIDOS DE HOY")
-        
-        col_nba, col_soccer = st.columns(2)
-        
-        with col_nba:
-            st.markdown("#### 🏀 NBA")
-            nba_games = get_nba_games_today()
-            for game in nba_games:
-                st.markdown(f"""
-                <div style='background: #1a1a1a; padding: 15px; margin: 10px 0; border-radius: 10px; border-left: 4px solid #00ff00;'>
-                    <div style='font-weight: 700; font-size: 16px;'>{game['home']} vs {game['away']}</div>
-                    <div style='color: #00ff00; font-size: 14px; margin-top: 5px;'>🕐 {game['time']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with col_soccer:
-            st.markdown("#### ⚽ FÚTBOL")
-            soccer_matches = get_soccer_matches()
-            for match in soccer_matches[:5]:
-                st.markdown(f"""
-                <div style='background: #1a1a1a; padding: 15px; margin: 10px 0; border-radius: 10px; border-left: 4px solid #00ff00;'>
-                    <div style='color: #888888; font-size: 12px; margin-bottom: 5px;'>{match['league']}</div>
-                    <div style='font-weight: 700; font-size: 16px;'>{match['home']} vs {match['away']}</div>
-                    <div style='color: #00ff00; font-size: 14px; margin-top: 5px;'>🕐 {match['time']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # ==================== TAB 2: GENERADORES ====================
-    with tab2:
-        st.markdown("### ⚡ GENERADORES DE PARLEYS PERSONALIZADOS")
-        
-        gen_type = st.selectbox(
-            "Selecciona el tipo de Parley:",
-            ["🏀 NBA Players", "⚽ Fútbol Players", "🏈 NFL Props", "🎲 COMBO MIX"],
-            key="gen_type"
-        )
-        
-        col1, col2 = st.columns([1, 3])
-        
-        with col1:
-            risk_level = st.radio(
-                "Nivel de Riesgo:",
-                ["🛡️ Asegurada", "⚖️ Media", "🔥 Difícil", "🦄 Soñadora"],
-                key="risk"
-            )
-            
-            num_picks = st.slider("Número de Picks:", 3, 16, 6, key="num_picks")
-            
-            if st.button("🎲 GENERAR PARLEY", use_container_width=True):
-                st.session_state.custom_parlay = True
-        
-        with col2:
-            if st.session_state.get('custom_parlay', False):
-                if "NBA" in gen_type:
-                    picks = generate_player_props("NBA", num_picks)
-                elif "Fútbol" in gen_type:
-                    picks = generate_player_props("Soccer", num_picks)
-                else:
-                    picks = generate_player_props("NBA", num_picks//2) + generate_player_props("Soccer", num_picks//2)
-                
-                # Ajustar cuotas según riesgo
-                risk_multipliers = {
-                    "🛡️ Asegurada": (1.4, 1.7),
-                    "⚖️ Media": (1.7, 2.0),
-                    "🔥 Difícil": (1.9, 2.3),
-                    "🦄 Soñadora": (2.1, 2.6)
-                }
-                
-                min_odd, max_odd = risk_multipliers[risk_level]
-                for pick in picks:
-                    pick['odds'] = round(random.uniform(min_odd, max_odd), 2)
-                
-                custom_parlay = {
-                    'name': f'{risk_level} - {gen_type}',
-                    'picks': picks,
-                    'type': 'custom'
-                }
-                
-                render_parlay_card(custom_parlay)
-    
-    # ==================== TAB 3: GOLEADORES ====================
-    with tab3:
-        render_top_scorers()
-        
-        st.markdown("---")
-        st.markdown("### 📈 ESTADÍSTICAS DESTACADAS")
-        
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("🥇 Líder", "Haaland", "28 goles")
-        with cols[1]:
-            st.metric("🎯 Más Asistencias", "Salah", "12 asistencias")
-        with cols[2]:
-            st.metric("🔥 Racha", "Mbappé", "5 partidos")
-        with cols[3]:
-            st.metric("⚡ Promedio", "Kane", "0.89 goles/90'")
-    
-    # ==================== TAB 4: COMUNIDAD ====================
-    with tab4:
-        st.markdown("### 👥 MURO DE LA COMUNIDAD")
-        
-        if 'posts' not in st.session_state:
-            st.session_state.posts = [
-                {
-                    'user': 'ParlayKing23',
-                    'parlay': '5-leg NBA parlay @12.5',
-                    'result': None,
-                    'votes_win': 0,
-                    'votes_lose': 0
-                },
-                {
-                    'user': 'SoccerPro',
-                    'parlay': 'Haaland + Mbappé Over 0.5 goles @4.2',
-                    'result': None,
-                    'votes_win': 0,
-                    'votes_lose': 0
-                },
-                {
-                    'user': 'DreamChaser',
-                    'parlay': '10-leg MIX parlay @245.0',
-                    'result': None,
-                    'votes_win': 0,
-                    'votes_lose': 0
-                }
-            ]
-        
-        # Publicar nuevo parley
-        with st.expander("➕ PUBLICAR MI PARLEY"):
-            user_name = st.text_input("Tu nombre:", placeholder="ParlayHunter")
-            parlay_desc = st.text_area("Describe tu parley:", placeholder="LeBron Over 25.5 pts + Curry Over 4.5 3PT...")
-            
-            if st.button("📤 PUBLICAR"):
-                if user_name and parlay_desc:
-                    st.session_state.posts.insert(0, {
-                        'user': user_name,
-                        'parlay': parlay_desc,
-                        'result': None,
-                        'votes_win': 0,
-                        'votes_lose': 0
-                    })
-                    st.success("✅ ¡Parley publicado!")
-                    st.rerun()
-        
-        # Mostrar posts
-        for idx, post in enumerate(st.session_state.posts):
-            st.markdown(f"""
-            <div class='post-card'>
-                <div style='font-weight: 700; color: #00ff00; margin-bottom: 10px;'>@{post['user']}</div>
-                <div style='font-size: 16px; margin-bottom: 15px;'>{post['parlay']}</div>
-                <div style='display: flex; gap: 10px; align-items: center;'>
-                    <span style='color: #888888;'>¿Cómo quedó?</span>
-                </div>
+        if not matches:
+            st.markdown("""
+            <div class="alert-box">
+                ⚠️ No hay partidos programados hoy para esta liga o FotMob no está disponible.
             </div>
             """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"**{len(matches)} partidos encontrados**")
             
-            col1, col2, col3 = st.columns([1, 1, 4])
-            with col1:
-                if st.button(f"🤑 Pagó ({post['votes_win']})", key=f"win_{idx}"):
-                    st.session_state.posts[idx]['votes_win'] += 1
-                    st.rerun()
-            with col2:
-                if st.button(f"🤡 Nadota ({post['votes_lose']})", key=f"lose_{idx}"):
-                    st.session_state.posts[idx]['votes_lose'] += 1
-                    st.rerun()
+            for match in matches:
+                render_match_card(match)
+    
+    # ==================== TAB 2: TABLA ====================
+    with tab2:
+        st.markdown(f"### 📊 TABLA DE POSICIONES - {selected_league}")
+        
+        with st.spinner("Cargando tabla desde FotMob..."):
+            table = get_league_table(league_id)
+        
+        if table is None or table.empty:
+            st.markdown("""
+            <div class="alert-box">
+                ⚠️ Tabla no disponible en este momento.
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.dataframe(
+                table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Pos": st.column_config.NumberColumn("Pos", width="small"),
+                    "Equipo": st.column_config.TextColumn("Equipo", width="large"),
+                    "PJ": st.column_config.NumberColumn("PJ", width="small"),
+                    "PG": st.column_config.NumberColumn("PG", width="small"),
+                    "PE": st.column_config.NumberColumn("PE", width="small"),
+                    "PP": st.column_config.NumberColumn("PP", width="small"),
+                    "GF": st.column_config.NumberColumn("GF", width="small"),
+                    "GC": st.column_config.NumberColumn("GC", width="small"),
+                    "DG": st.column_config.NumberColumn("DG", width="small"),
+                    "Pts": st.column_config.NumberColumn("Pts", width="small")
+                }
+            )
+            
+            # Análisis rápido
+            if len(table) > 0:
+                leader = table.iloc[0]
+                last = table.iloc[-1]
+                
+                st.markdown("---")
+                st.markdown("### 📈 ANÁLISIS RÁPIDO")
+                
+                cols = st.columns(3)
+                with cols[0]:
+                    st.metric("🥇 Líder", leader['Equipo'], f"{leader['Pts']} pts")
+                with cols[1]:
+                    st.metric("🔻 Último", last['Equipo'], f"{last['Pts']} pts")
+                with cols[2]:
+                    best_diff = table.loc[table['DG'].idxmax()]
+                    st.metric("⚽ Mejor Diferencia", best_diff['Equipo'], f"+{best_diff['DG']}")
+    
+    # ==================== TAB 3: JUGADORES ====================
+    with tab3:
+        st.markdown(f"### 👟 ESTADÍSTICAS DE JUGADORES - {selected_league}")
+        
+        stat_tab1, stat_tab2, stat_tab3 = st.tabs([
+            "⚽ Goleadores",
+            "🎯 Asistidores",
+            "🔫 Francotiradores"
+        ])
+        
+        with stat_tab1:
+            with st.spinner("Cargando goleadores..."):
+                scorers = get_league_stats(league_id, 'scorers')
+            
+            if not scorers:
+                st.warning("⚠️ Datos de goleadores no disponibles")
+            else:
+                for idx, player in enumerate(scorers, 1):
+                    st.markdown(f"""
+                    <div class="player-card">
+                        <div class="player-info">
+                            <div style="font-size: 20px; font-weight: 700; color: #00ff00; width: 40px;">{idx}</div>
+                            <div>
+                                <div class="player-name">{player['name']}</div>
+                                <div class="player-team">{player['team']}</div>
+                            </div>
+                        </div>
+                        <div class="player-stat">{player['stat_value']} ⚽</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with stat_tab2:
+            with st.spinner("Cargando asistidores..."):
+                assisters = get_league_stats(league_id, 'assists')
+            
+            if not assisters:
+                st.warning("⚠️ Datos de asistencias no disponibles")
+            else:
+                for idx, player in enumerate(assisters, 1):
+                    st.markdown(f"""
+                    <div class="player-card">
+                        <div class="player-info">
+                            <div style="font-size: 20px; font-weight: 700; color: #00ff00; width: 40px;">{idx}</div>
+                            <div>
+                                <div class="player-name">{player['name']}</div>
+                                <div class="player-team">{player['team']}</div>
+                            </div>
+                        </div>
+                        <div class="player-stat">{player['stat_value']} 🎯</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with stat_tab3:
+            with st.spinner("Cargando estadísticas de tiros..."):
+                shooters = get_league_stats(league_id, 'shots')
+            
+            if not shooters:
+                st.warning("⚠️ Datos de tiros no disponibles")
+            else:
+                for idx, player in enumerate(shooters, 1):
+                    st.markdown(f"""
+                    <div class="player-card">
+                        <div class="player-info">
+                            <div style="font-size: 20px; font-weight: 700; color: #00ff00; width: 40px;">{idx}</div>
+                            <div>
+                                <div class="player-name">{player['name']}</div>
+                                <div class="player-team">{player['team']}</div>
+                            </div>
+                        </div>
+                        <div class="player-stat">{player['stat_value']} 🔫</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+    
+    # ==================== TAB 4: PARLEY GENERATOR ====================
+    with tab4:
+        st.markdown("### 🎲 GENERADOR DE PARLEYS INTELIGENTE")
+        
+        st.markdown("""
+        <div style='background: #1a1a1a; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
+            <p style='color: #888888; margin: 0;'>
+                🧠 Este generador cruza los datos de FotMob para crear parleys inteligentes basados en:
+            </p>
+            <ul style='color: #00ff00; margin-top: 10px;'>
+                <li>Posiciones en tabla</li>
+                <li>Partidos del día</li>
+                <li>Estadísticas de equipos</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            if st.button("🎲 GENERAR PARLEY", use_container_width=True):
+                st.session_state.parley_generated = True
+        
+        if st.session_state.get('parley_generated', False):
+            with st.spinner("Analizando datos y generando parley..."):
+                parley = generate_smart_parlay(league_id, selected_league)
+            
+            if not parley['picks']:
+                st.warning("⚠️ No hay suficientes datos para generar un parley en este momento")
+            else:
+                render_parley_card(parley)
+    
+    # ==================== TAB 5: NBA ====================
+    with tab5:
+        st.markdown("### 🏀 PARTIDOS NBA DE HOY")
+        
+        nba_games = get_nba_games_today()
+        
+        if not nba_games:
+            st.warning("⚠️ No hay partidos de NBA programados hoy")
+        else:
+            for game in nba_games:
+                st.markdown(f"""
+                <div class="match-card">
+                    <div class="match-header">
+                        <div class="match-time">🕐 {game['time']}</div>
+                        <div class="match-league">NBA</div>
+                    </div>
+                    <div class="match-teams">
+                        <div class="team-name">{game['home']}</div>
+                        <div class="match-vs">{game['home_score']} - {game['away_score']}</div>
+                        <div class="team-name">{game['away']}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
     
     # FOOTER
     st.markdown("---")
-    st.markdown("""
+    st.markdown(f"""
     <div style='text-align: center; color: #555555; padding: 20px; font-size: 12px;'>
-        <p>💎 Parley Hunter Elite v2.0 | Desarrollado con Streamlit & Python</p>
-        <p style='color: #00ff00;'>⚠️ Apuesta responsablemente. Este sistema es solo para entretenimiento.</p>
+        <p>⚽ Parleisitos v3.0 | Datos en tiempo real desde FotMob</p>
+        <p style='color: #00ff00;'>⚠️ Apuesta responsablemente</p>
+        <p style='color: #888888; margin-top: 10px;'>Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
     </div>
     """, unsafe_allow_html=True)
 
